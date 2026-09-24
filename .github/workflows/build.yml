@@ -20,7 +20,6 @@ jobs:
           $url = "https://www.nuget.org/api/v2/package/Microsoft.Web.WebView2/1.0.1901.177"
           Invoke-WebRequest -Uri $url -OutFile webview2.zip
           Expand-Archive webview2.zip -DestinationPath webview2
-          Write-Host "WebView2 SDK downloaded"
 
       - name: Compile
         shell: cmd
@@ -36,20 +35,6 @@ jobs:
 
       - name: Copy assets next to exe
         shell: cmd
-        run: |
-          copy src\start.html start.html
-          copy src\startup.wav startup.wav
-          copy src\shutdown.wav shutdown.wav
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: XpBrowser
-          path: |
-            XpBrowser.exe
-            start.html
-            startup.wav
-            shutdown.wav        shell: cmd
         run: |
           copy src\start.html start.html
           copy src\startup.wav startup.wav

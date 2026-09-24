@@ -14,7 +14,6 @@
 #pragma comment(lib, "msimg32.lib")
 #pragma comment(lib, "winmm.lib")
 
-// ─────────── globals ───────────
 static HWND g_hMain        = nullptr;
 static HWND g_hAddress     = nullptr;
 static HWND g_hWebViewHost = nullptr;
@@ -26,7 +25,6 @@ static const int TOOLBAR_H = 46;
 static const int BTN_W     = 30;
 static const int BTN_H     = 30;
 
-// XP Luna Blue цвета
 static const COLORREF XP_BLUE_TOP   = RGB(  0,  88, 238);
 static const COLORREF XP_BLUE_MID   = RGB( 63, 140, 243);
 static const COLORREF XP_BLUE_DARK  = RGB(  0,  60, 170);
@@ -41,7 +39,6 @@ static const COLORREF XP_BTN_BORDER = RGB(  0,  60, 116);
 #define ID_GO      1005
 #define ID_ADDR    1006
 
-// ─────────── хелперы ───────────
 static void GradientRect(HDC hdc, RECT& rc, COLORREF top, COLORREF bot) {
     TRIVERTEX v[2];
     v[0].x = rc.left;  v[0].y = rc.top;
@@ -77,7 +74,6 @@ static std::wstring GetExeDir() {
     return dir;
 }
 
-// ─────────── WebView ───────────
 static void UpdateNavButtons() {
     if (!g_webview) return;
     InvalidateRect(g_hMain, nullptr, FALSE);
@@ -140,7 +136,6 @@ static void CreateWebView() {
             }).Get());
 }
 
-// ─────────── рисование ───────────
 static void DrawToolbar(HWND hwnd, HDC hdc) {
     RECT rc;
     GetClientRect(hwnd, &rc);
@@ -204,7 +199,6 @@ static void DrawXpButton(LPDRAWITEMSTRUCT dis, const wchar_t* text, bool round =
     DeleteObject(hFont);
 }
 
-// ─────────── layout ───────────
 static void LayoutChildren(HWND hwnd) {
     RECT rc;
     GetClientRect(hwnd, &rc);
@@ -240,7 +234,6 @@ static void DoNavigate() {
     g_webview->Navigate(url.c_str());
 }
 
-// ─────────── WndProc ───────────
 static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM w, LPARAM l) {
     switch (msg) {
     case WM_CREATE: {
@@ -274,7 +267,6 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM w, LPARAM l) {
             WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN | WS_CLIPSIBLINGS,
             0, TOOLBAR_H, 100, 100, hwnd, nullptr, hi, nullptr);
 
-        // звук запуска XP
         std::wstring startupPath = GetExeDir() + L"startup.wav";
         PlaySoundW(startupPath.c_str(), nullptr,
                    SND_FILENAME | SND_ASYNC | SND_NODEFAULT);
@@ -352,7 +344,6 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM w, LPARAM l) {
     return DefWindowProcW(hwnd, msg, w, l);
 }
 
-// ─────────── entry ───────────
 int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE, LPWSTR, int nCmdShow) {
     CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
 

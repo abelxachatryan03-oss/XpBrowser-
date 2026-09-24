@@ -274,7 +274,7 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM w, LPARAM l) {
             WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN | WS_CLIPSIBLINGS,
             0, TOOLBAR_H, 100, 100, hwnd, nullptr, hi, nullptr);
 
-        // ─── звук запуска XP ───
+        // звук запуска XP
         std::wstring startupPath = GetExeDir() + L"startup.wav";
         PlaySoundW(startupPath.c_str(), nullptr,
                    SND_FILENAME | SND_ASYNC | SND_NODEFAULT);
@@ -341,7 +341,6 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM w, LPARAM l) {
         if (g_controller) { g_controller->Release(); g_controller = nullptr; }
         if (g_webview)    { g_webview->Release();    g_webview    = nullptr; }
 
-        // ─── звук выхода XP ───
         std::wstring shutdownPath = GetExeDir() + L"shutdown.wav";
         PlaySoundW(shutdownPath.c_str(), nullptr,
                    SND_FILENAME | SND_SYNC);

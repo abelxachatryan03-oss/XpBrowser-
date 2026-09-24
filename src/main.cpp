@@ -1,7 +1,8 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
-#include <exdisp.h>
+#include <mmsystem.h>
 #include <mshtml.h>
+#include <exdisp.h>
 #include <mshtmhst.h>
 #include <ocidl.h>
 #include <string>

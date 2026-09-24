@@ -1,0 +1,51 @@
+name: Build XpBrowser
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Download WebView2 SDK
+        shell: pwsh
+        run: |
+          $url = "https://www.nuget.org/api/v2/package/Microsoft.Web.WebView2/1.0.2478.35"
+          Invoke-WebRequest -Uri $url -OutFile webview2.zip
+          Expand-Archive webview2.zip -DestinationPath webview2
+
+      - name: Compile
+        shell: cmd
+        run: |
+          cl /nologo /O2 /MT /EHsc /DNDEBUG /DWIN32_LEAN_AND_MEAN /utf-8 ^
+             /I webview2\build\native\include ^
+             /Fe:XpBrowser.exe src\main.cpp ^
+             /link /SUBSYSTEM:WINDOWS /ENTRY:wWinMainCRTStartup ^
+             user32.lib gdi32.lib ole32.lib oleaut32.lib shell32.lib ^
+             msimg32.lib winmm.lib ^
+             /LIBPATH:webview2\build\native\x64 ^
+             WebView2LoaderStatic.lib
+
+      - name: Copy assets next to exe
+        shell: cmd
+        run: |
+          copy src\start.html start.html
+          copy src\startup.wav startup.wav
+          copy src\shutdown.wav shutdown.wav
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: XpBrowser
+          path: |
+            XpBrowser.exe
+            start.html
+            startup.wav
+            shutdown.wav

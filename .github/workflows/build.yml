@@ -14,24 +14,14 @@ jobs:
       - name: Setup MSVC
         uses: ilammy/msvc-dev-cmd@v1
 
-      - name: Download WebView2 SDK
-        shell: pwsh
-        run: |
-          $url = "https://www.nuget.org/api/v2/package/Microsoft.Web.WebView2/1.0.1901.177"
-          Invoke-WebRequest -Uri $url -OutFile webview2.zip
-          Expand-Archive webview2.zip -DestinationPath webview2
-
       - name: Compile
         shell: cmd
         run: |
-          cl /nologo /O2 /MT /EHsc /DNDEBUG /DWIN32_LEAN_AND_MEAN /utf-8 /std:c++17 ^
-             /I webview2\build\native\include ^
+          cl /nologo /O2 /MT /EHsc /DNDEBUG /DWIN32_LEAN_AND_MEAN /utf-8 ^
              /Fe:XpBrowser.exe src\main.cpp ^
              /link /SUBSYSTEM:WINDOWS /ENTRY:wWinMainCRTStartup ^
              user32.lib gdi32.lib ole32.lib oleaut32.lib shell32.lib ^
-             msimg32.lib winmm.lib ^
-             /LIBPATH:webview2\build\native\x64 ^
-             WebView2LoaderStatic.lib
+             msimg32.lib winmm.lib comctl32.lib
 
       - name: Copy assets next to exe
         shell: cmd

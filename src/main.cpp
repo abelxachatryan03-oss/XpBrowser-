@@ -1,10 +1,11 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
-#include <shellapi.h>
+#include <exdisp.h>
+#include <mshtml.h>
+#include <mshtmhst.h>
+#include <ocidl.h>
 #include <string>
 #include <vector>
-
-#include "WebView2.h"
 
 #pragma comment(lib, "user32.lib")
 #pragma comment(lib, "gdi32.lib")
@@ -13,13 +14,14 @@
 #pragma comment(lib, "shell32.lib")
 #pragma comment(lib, "msimg32.lib")
 #pragma comment(lib, "winmm.lib")
+#pragma comment(lib, "comctl32.lib")
 
+// ─────────── globals ───────────
 static HWND g_hMain        = nullptr;
 static HWND g_hAddress     = nullptr;
-static HWND g_hWebViewHost = nullptr;
+static HWND g_hBrowserHost = nullptr;
 
-static ICoreWebView2Controller* g_controller = nullptr;
-static ICoreWebView2*           g_webview    = nullptr;
+static IWebBrowser2* g_browser = nullptr;
 
 static const int TOOLBAR_H = 46;
 static const int BTN_W     = 30;
@@ -39,6 +41,7 @@ static const COLORREF XP_BTN_BORDER = RGB(  0,  60, 116);
 #define ID_GO      1005
 #define ID_ADDR    1006
 
+// ─────────── хелперы ───────────
 static void GradientRect(HDC hdc, RECT& rc, COLORREF top, COLORREF bot) {
     TRIVERTEX v[2];
     v[0].x = rc.left;  v[0].y = rc.top;
@@ -74,68 +77,69 @@ static std::wstring GetExeDir() {
     return dir;
 }
 
-static void UpdateNavButtons() {
-    if (!g_webview) return;
-    InvalidateRect(g_hMain, nullptr, FALSE);
+// ─────────── создание IE ───────────
+static void CreateBrowser() {
+    if (!g_hBrowserHost) return;
+
+    RECT rc;
+    GetClientRect(g_hBrowserHost, &rc);
+
+    // создаём OLE-объект IE через CLSID_WebBrowser
+    IOleObject* ole = nullptr;
+    HRESULT hr = CoCreateInstance(CLSID_WebBrowser, nullptr,
+        CLSCTX_INPROC_SERVER | CLSCTX_LOCAL_SERVER,
+        IID_IOleObject, (void**)&ole);
+    if (FAILED(hr) || !ole) {
+        MessageBoxW(nullptr, L"Не удалось создать IE движок.\n"
+                             L"Установлен ли Internet Explorer?",
+                    L"XpBrowser", MB_OK | MB_ICONERROR);
+        return;
+    }
+
+    // site
+    ole->SetClientSite(nullptr);
+
+    // получаем IWebBrowser2
+    hr = ole->QueryInterface(IID_IWebBrowser2, (void**)&g_browser);
+    if (FAILED(hr)) {
+        ole->Release();
+        MessageBoxW(nullptr, L"IWebBrowser2 недоступен", L"XpBrowser",
+                    MB_OK | MB_ICONERROR);
+        return;
+    }
+
+    // размеры
+    RECT brc = {0, 0, rc.right - rc.left, rc.bottom - rc.top};
+    hr = ole->DoVerb(OLEIVERB_INPLACEACTIVATE, nullptr, nullptr, 0, g_hBrowserHost, &brc);
+
+    // embed в host
+    g_browser->put_Left(0);
+    g_browser->put_Top(0);
+    g_browser->put_Width(rc.right - rc.left);
+    g_browser->put_Height(rc.bottom - rc.top);
+    g_browser->put_Visible(VARIANT_TRUE);
+
+    // скрываем скроллбары/статус бар IE
+    g_browser->put_StatusBar(VARIANT_FALSE);
+    g_browser->put_ToolBar(VARIANT_FALSE);
+    g_browser->put_MenuBar(VARIANT_FALSE);
+
+    ole->Release();
 }
 
-static void CreateWebView() {
-    if (!g_hWebViewHost) return;
+static void NavigateTo(const std::wstring& url) {
+    if (!g_browser) return;
+    VARIANT vUrl; VariantInit(&vUrl);
+    vUrl.vt = VT_BSTR;
+    vUrl.bstrVal = SysAllocString(url.c_str());
 
-    CreateCoreWebView2EnvironmentWithOptions(
-        nullptr, nullptr, nullptr,
-        Microsoft::WRL::Callback<ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler>(
-            [](HRESULT result, ICoreWebView2Environment* env) -> HRESULT {
-                if (FAILED(result) || !env) return result;
+    VARIANT vEmpty; VariantInit(&vEmpty);
 
-                env->CreateCoreWebView2Controller(
-                    g_hWebViewHost,
-                    Microsoft::WRL::Callback<ICoreWebView2CreateCoreWebView2ControllerCompletedHandler>(
-                        [](HRESULT r2, ICoreWebView2Controller* ctrl) -> HRESULT {
-                            if (FAILED(r2) || !ctrl) return r2;
-                            g_controller = ctrl;
-                            g_controller->AddRef();
-                            g_controller->get_CoreWebView2(&g_webview);
-
-                            ICoreWebView2Settings* s = nullptr;
-                            if (SUCCEEDED(g_webview->get_Settings(&s)) && s) {
-                                s->put_IsScriptEnabled(TRUE);
-                                s->put_AreDefaultScriptDialogsEnabled(TRUE);
-                                s->put_IsWebMessageEnabled(TRUE);
-                                s->Release();
-                            }
-
-                            EventRegistrationToken tok;
-                            g_webview->add_NavigationCompleted(
-                                Microsoft::WRL::Callback<ICoreWebView2NavigationCompletedEventHandler>(
-                                    [](ICoreWebView2* sender,
-                                       ICoreWebView2NavigationCompletedEventArgs*) -> HRESULT {
-                                        LPWSTR uri = nullptr;
-                                        sender->get_Source(&uri);
-                                        if (uri) {
-                                            SetWindowTextW(g_hAddress, uri);
-                                            CoTaskMemFree(uri);
-                                        }
-                                        UpdateNavButtons();
-                                        return S_OK;
-                                    }).Get(),
-                                &tok);
-
-                            RECT rc;
-                            GetClientRect(g_hWebViewHost, &rc);
-                            g_controller->put_Bounds(rc);
-                            g_controller->put_IsVisible(TRUE);
-
-                            std::wstring startUrl = L"file:///" + GetExeDir() + L"start.html";
-                            for (auto& c : startUrl) if (c == L'\\') c = L'/';
-
-                            g_webview->Navigate(startUrl.c_str());
-                            return S_OK;
-                        }).Get());
-                return S_OK;
-            }).Get());
+    g_browser->Navigate2(&vUrl, &vEmpty, &vEmpty, &vEmpty, &vEmpty);
+    VariantClear(&vUrl);
 }
 
+// ─────────── рисование ───────────
 static void DrawToolbar(HWND hwnd, HDC hdc) {
     RECT rc;
     GetClientRect(hwnd, &rc);
@@ -180,11 +184,8 @@ static void DrawXpButton(LPDRAWITEMSTRUCT dis, const wchar_t* text, bool round =
     HPEN oldPen = (HPEN)SelectObject(hdc, pen);
     HBRUSH oldBr = (HBRUSH)SelectObject(hdc, GetStockObject(NULL_BRUSH));
 
-    if (round) {
-        Ellipse(hdc, rc.left, rc.top, rc.right, rc.bottom);
-    } else {
-        Rectangle(hdc, rc.left, rc.top, rc.right, rc.bottom);
-    }
+    if (round) Ellipse(hdc, rc.left, rc.top, rc.right, rc.bottom);
+    else       Rectangle(hdc, rc.left, rc.top, rc.right, rc.bottom);
 
     SelectObject(hdc, oldPen);
     SelectObject(hdc, oldBr);
@@ -210,17 +211,17 @@ static void LayoutChildren(HWND hwnd) {
 
     MoveWindow(g_hAddress, x, y, W - x - 80 - 12, BTN_H, TRUE);
 
-    if (g_hWebViewHost)
-        MoveWindow(g_hWebViewHost, 0, TOOLBAR_H, W, H - TOOLBAR_H, TRUE);
+    if (g_hBrowserHost)
+        MoveWindow(g_hBrowserHost, 0, TOOLBAR_H, W, H - TOOLBAR_H, TRUE);
 
-    if (g_controller) {
-        RECT b = {0, 0, W, H - TOOLBAR_H};
-        g_controller->put_Bounds(b);
+    if (g_browser) {
+        g_browser->put_Width(W);
+        g_browser->put_Height(H - TOOLBAR_H);
     }
 }
 
 static void DoNavigate() {
-    if (!g_webview) return;
+    if (!g_browser) return;
     wchar_t buf[2048] = {};
     GetWindowTextW(g_hAddress, buf, 2048);
     if (buf[0] == 0) return;
@@ -231,9 +232,10 @@ static void DoNavigate() {
         url.rfind(L"about:", 0) != 0) {
         url = L"https://" + url;
     }
-    g_webview->Navigate(url.c_str());
+    NavigateTo(url);
 }
 
+// ─────────── WndProc ───────────
 static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM w, LPARAM l) {
     switch (msg) {
     case WM_CREATE: {
@@ -262,16 +264,24 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM w, LPARAM l) {
                       0, navY, 80, BTN_H,
                       hwnd, (HMENU)ID_GO, hi, nullptr);
 
-        g_hWebViewHost = CreateWindowExW(
+        g_hBrowserHost = CreateWindowExW(
             0, L"STATIC", L"",
             WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN | WS_CLIPSIBLINGS,
             0, TOOLBAR_H, 100, 100, hwnd, nullptr, hi, nullptr);
 
+        // звук запуска XP
         std::wstring startupPath = GetExeDir() + L"startup.wav";
         PlaySoundW(startupPath.c_str(), nullptr,
                    SND_FILENAME | SND_ASYNC | SND_NODEFAULT);
 
-        CreateWebView();
+        CreateBrowser();
+
+        // стартовая страница
+        if (g_browser) {
+            std::wstring startUrl = L"file:///" + GetExeDir() + L"start.html";
+            for (auto& c : startUrl) if (c == L'\\') c = L'/';
+            NavigateTo(startUrl);
+        }
         return 0;
     }
 
@@ -311,14 +321,14 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM w, LPARAM l) {
     case WM_COMMAND: {
         int id = LOWORD(w);
         switch (id) {
-        case ID_BACK:    if (g_webview) g_webview->GoBack();     break;
-        case ID_FORWARD: if (g_webview) g_webview->GoForward();  break;
-        case ID_RELOAD:  if (g_webview) g_webview->Reload();     break;
+        case ID_BACK:    if (g_browser) g_browser->GoBack();     break;
+        case ID_FORWARD: if (g_browser) g_browser->GoForward();  break;
+        case ID_RELOAD:  if (g_browser) g_browser->Refresh();    break;
         case ID_HOME: {
-            if (g_webview) {
+            if (g_browser) {
                 std::wstring u = L"file:///" + GetExeDir() + L"start.html";
                 for (auto& c : u) if (c == L'\\') c = L'/';
-                g_webview->Navigate(u.c_str());
+                NavigateTo(u);
             }
             break;
         }
@@ -330,8 +340,7 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM w, LPARAM l) {
     }
 
     case WM_DESTROY: {
-        if (g_controller) { g_controller->Release(); g_controller = nullptr; }
-        if (g_webview)    { g_webview->Release();    g_webview    = nullptr; }
+        if (g_browser) { g_browser->Release(); g_browser = nullptr; }
 
         std::wstring shutdownPath = GetExeDir() + L"shutdown.wav";
         PlaySoundW(shutdownPath.c_str(), nullptr,
@@ -346,6 +355,7 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM w, LPARAM l) {
 
 int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE, LPWSTR, int nCmdShow) {
     CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+    OleInitialize(nullptr);
 
     WNDCLASSW wc{};
     wc.lpfnWndProc   = WndProc;
@@ -375,6 +385,7 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE, LPWSTR, int nCmdShow) {
         TranslateMessage(&m);
         DispatchMessage(&m);
     }
+    OleUninitialize();
     CoUninitialize();
     return (int)m.wParam;
 }
